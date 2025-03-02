@@ -1,0 +1,6 @@
+services:
+  - type: web
+    runtime: elixir
+    name: minimal-webrtc-liveview
+    repo: https://github.com/mrdemiurgic/minimal-webrtc
+    branch: main
