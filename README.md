@@ -1,6 +1,6 @@
 # MinimalWebrtc
 
-A minimal WebRTC video chat implementation using Phoenix LiveView and TypeScript.
+A minimalistic WebRTC video chat implementation using Phoenix LiveView for learning purposes.
 
 ## Key Files
 
@@ -14,12 +14,10 @@ This Phoenix LiveView file handles the server-side coordination between peers:
 - Handles peers joining and leaving the room
 
 ### assets/js/webrtc.ts
-This TypeScript file contains all the WebRTC peer connection logic:
-- Sets up local and remote video streams
-- Handles the WebRTC negotiation process
-- Creates and manages peer connections
-- Exchanges connection information between peers
-- Contains detailed documentation explaining the WebRTC process
+This JavaScript file implements the WebRTC peer connection logic.
+- Sets up local video stream from the webcam
+- Handles WebRTC connection negotiation between peers
+- Each step is documented and explained
 
 ## Getting Started
 

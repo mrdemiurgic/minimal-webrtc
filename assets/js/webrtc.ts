@@ -11,9 +11,9 @@
  *
  * 2. Signaling Process (done through our Phoenix server):
  *    a) Peer A enters the room
- *       - Broadcasts "ready" message
+ *       - Broadcasts "enter" message
  *    b) Peer B enters the room
- *       - Broadcasts "ready" message
+ *       - Broadcasts "enter" message
  *       - Peer A receives "enter" event and creates an "offer"
  *    c) Offer/Answer Exchange:
  *       - Peer A sends SDP offer (contains video/audio capabilities)
@@ -23,13 +23,13 @@
  * 3. ICE Candidate Exchange:
  *    - Both peers discover their network connectivity options
  *    - Each peer sends their ICE candidates to the other
- *    - ICE candidates are like possible paths for connection
- *      (local network, through STUN server, etc.)
+ *    - ICE candidates are possible paths for connection
+ *      (local network, through a UDP port punched into NAT from the outside, through a TURN server, etc.)
  *
  * 4. Connection Establishment:
- *    - Once compatible ICE candidates are found
- *    - Direct peer-to-peer connection is established
- *    - Video/audio starts flowing directly between peers
+ *    Once compatible ICE candidates are found,
+ *    direct peer-to-peer connection is established.
+ *    Video/audio starts flowing directly between peers.
  */
 
 const iceConfig = {
@@ -66,15 +66,9 @@ export const LocalVideo = {
  */
 export const RemoteVideo = {
   async mounted() {
-    // Create the WebRTC peer connection
+    // Create the WebRTC peer connection instance.
+    // ICE configuration is set here
     const peer = new RTCPeerConnection(iceConfig);
-
-    // Get local webcam stream and add each track to the peer connection
-    // This makes our video available to send to the other peer
-    const localStream = await createLocalStream();
-    for (const track of localStream.getTracks()) {
-      peer.addTrack(track, localStream);
-    }
 
     // When we receive video/audio tracks from the other peer,
     // attach them to the video element to display them
@@ -85,52 +79,56 @@ export const RemoteVideo = {
 
     // When we discover a new ICE candidate (a potential connection path),
     // send it to the other peer through Phoenix
+    //
+    // A RTCPeerConnection is triggered to start generating ICE candidates
+    // after an offer or answer sdp is created and set as the local description.
+    //
+    // See the "enter", "offer", and "answer" event handlers below
     peer.onicecandidate = ({ candidate }) => {
-      console.log("Found new ICE candidate, sending to other peer");
+      console.log("Generated a new ICE candidate:", candidate);
       this.pushEvent("candidate", candidate ?? {});
     };
 
     // When we receive an ICE candidate from the other peer,
-    // add it to our peer connection as a potential path
+    // add it to our peer connection as a potential connection path
     this.handleEvent("candidate", (candidate) => {
-      console.log("received a candidate", candidate);
+      console.log("Received an ICE candidate", candidate);
       peer.addIceCandidate(candidate);
     });
 
-    // When a new peer enters the room, we create and send an offer
-    // The offer contains our video/audio capabilities
+    // When a new peer enters the room and is ready to connect,
+    // we create and send an offer.
+    //
+    // The offer description (sdp) contains our video/audio capabilities
     this.handleEvent("enter", async () => {
-      console.log("New peer entered, creating offer");
+      console.log("A new peer joined and is requesting an offer sdp");
       const offer = await peer.createOffer();
 
       // We must set our local description before sending the offer
       await peer.setLocalDescription(offer);
 
-      console.log("Sending offer to new peer");
       this.pushEvent("offer", offer);
     });
 
-    // When we receive an offer from another peer:
-    // 1. Set it as remote description (their capabilities)
-    // 2. Create an answer with our capabilities
-    // 3. Set our local description
-    // 4. Send the answer back
+    // When we receive an offer from another peer,
+    // add it to our RTCPeerConnection instance.
+    //
+    // In response, generate an answer sdp and relay it back.
     this.handleEvent("offer", async (offer) => {
-      console.log("Received offer from other peer");
+      console.log("Received an offer from the other peer:", offer);
+
       await peer.setRemoteDescription(offer);
 
-      console.log("Creating answer with our capabilities");
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
 
-      console.log("Sending answer back to peer");
       this.pushEvent("answer", answer);
     });
 
-    // When we receive an answer to our offer:
-    // Set it as remote description (their capabilities)
+    // When we receive an answer to our offer, add it into RTCPeerConnection.
+    //
     // At this point, both peers know each other's capabilities
-    // and ICE candidate exchange can begin
+    // such as which video and audio codecs can be used with each other.
     this.handleEvent("answer", async (answer) => {
       console.log("Received answer, setting peer capabilities");
       await peer.setRemoteDescription(answer);
@@ -140,7 +138,22 @@ export const RemoteVideo = {
       this.el.srcObject = undefined;
     });
 
-    console.log("sending out enter");
+    // After all event listeners are set up, we are ready to add
+    // the local webcam video stream tracks to RTCPeerConnection.
+    //
+    // This action triggers the negotiationneeded event. Some webrtc
+    // engine implementations rely on this event to know when to create
+    // the offer sdp.
+    //
+    // To keep it simple, we will send out the "enter" event to manually
+    // trigger the other end to create an offer sdp
+    //
+    // https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/negotiationneeded_event
+    const localStream = await createLocalStream();
+    for (const track of localStream.getTracks()) {
+      peer.addTrack(track, localStream);
+    }
+
     this.pushEvent("enter", {});
   },
 };
@@ -148,6 +161,7 @@ export const RemoteVideo = {
 /**
  * Helper function to access the user's webcam
  * Returns a MediaStream object containing video track
+ *
  * facingMode: "user" means we want the front-facing camera
  */
 const createLocalStream = async () => {
